@@ -7,6 +7,13 @@ Open `index.html` in Chrome or Edge. From Windows the path is
 `\\wsl$\Ubuntu-22.04\home\rufus\projects\htc2\index.html`.
 (Or run `python3 -m http.server` in this folder and go to http://localhost:8000.)
 
+## On a phone
+The same file works on phones and tablets, in landscape only. Held upright, it shows a "turn sideways" screen and pauses.
+- **Hitter:** tap anywhere to swing.
+- **Rider:** hold the left or right half of the screen to steer. Tap a powerup slot to use it, and tap the follow cam to resize it.
+- On Android, pressing Play goes fullscreen and locks to landscape. iPhones don't allow that, so just turn the phone.
+- To try touch mode on a computer, add `?touch` to the end of the URL.
+
 ## How it plays
 1. **Hitter**: you stand on a dirt cliff, 50 m high, at 45° to the oncoming cyclist. The view turns to follow
    them as they pass. There's no aiming and no timing meter. The two grass patches across the track are your

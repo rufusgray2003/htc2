@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Hit The Cyclist 2</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -22,13 +25,15 @@
   <div id="hitterHud">
     <div id="crosshair"></div>
     <div id="incoming"></div>
-    <div id="hitterHint">Swing (click / Space) as the cyclist rides through the grass · dead centre between the patches = furthest</div>
+    <div id="hitterHint"><span class="kb">Swing (click / Space) as the cyclist rides through the grass · dead centre between the patches = furthest</span><span class="tc">Tap to swing as the cyclist rides through the grass · dead centre = furthest</span></div>
   </div>
 
   <div id="cyclistHud">
     <div id="effects"></div>
     <div id="inventory"></div>
-    <div id="cyclistHint">A / D to steer &nbsp;·&nbsp; 1 2 3 (or Space for slot 1) to use powerups</div>
+    <div id="touchL" class="touchZone tc">◀</div>
+    <div id="touchR" class="touchZone tc">▶</div>
+    <div id="cyclistHint"><span class="kb">A / D to steer &nbsp;·&nbsp; 1 2 3 (or Space for slot 1) to use powerups</span><span class="tc">Hold left / right side to steer &nbsp;·&nbsp; tap a powerup to use it</span></div>
   </div>
 
   <div id="bigText"></div>
@@ -40,12 +45,14 @@
 
 <div id="pip" class="hidden"><span id="pipLabel">Follow cam · click to enlarge</span></div>
 <div id="flash"></div>
+<div id="rotate"><div class="rotIcon">📱</div><div>Turn your phone sideways to play</div></div>
 
 <!-- Title screen -->
 <div id="title" class="screen">
   <h1>HIT THE CYCLIST <span>2</span></h1>
   <p class="sub">Whack the cyclist. Then <b>become</b> the cyclist.</p>
-  <div class="howto">
+  <p class="tc touchHow">Tap to whack the cyclist off the cliff: dead centre between the grass patches goes furthest.<br>Then hold the <b>left</b> or <b>right</b> side of the screen to steer onto molehills. Don't land too steep!<br>Tap your powerup slots (bottom right) to use them.</p>
+  <div class="howto kb">
     <div>
       <h3>1 · Hitter</h3>
       <p>You're at the top of a cliff. A cyclist rides toward the edge, through two grass patches.<br>Swing as they ride through: <b>early</b> sends them higher (risky), <b>late</b> sends them flatter and faster.<br>Dead centre, between the patches, goes furthest and earns a free 🚀.<br>Miss, and they ride off the edge anyway, slow and steep.</p>
@@ -69,7 +76,7 @@
   <div id="resNew" class="hidden">New best!</div>
   <div id="resNote" class="hidden"></div>
   <div id="resStats"></div>
-  <button id="againBtn">Play again (R)</button>
+  <button id="againBtn">Play again<span class="kb"> (R)</span></button>
 </div>
 
 <script src="vendor/three.min.js"></script>

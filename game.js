@@ -70,8 +70,13 @@
   // ------------------------------------------------------------------
   // Renderer / scene / cameras
   // ------------------------------------------------------------------
+  // Phones and tablets: tap controls, landscape only. Add ?touch to the URL to force it on a desktop.
+  const TOUCH = matchMedia('(pointer: coarse)').matches || /[?&]touch\b/.test(location.search);
+  if (TOUCH) document.body.classList.add('touch');
+  const isPortrait = () => TOUCH && innerHeight > innerWidth;
+
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, TOUCH ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -128,7 +133,7 @@
   scene.add(new THREE.HemisphereLight(0xe6f4ff, 0x8a6a48, 0.8));
   const sun = new THREE.DirectionalLight(0xfff1d0, 0.9);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(TOUCH ? 1024 : 2048, TOUCH ? 1024 : 2048);
   Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 260 });
   sun.shadow.bias = -0.0006;
   scene.add(sun, sun.target);
@@ -1130,6 +1135,7 @@
       const d = document.createElement('div');
       const id = P.inv[s];
       d.className = 'slot' + (id ? ' full' : '');
+      d.dataset.slot = s;
       d.innerHTML = `<span class="key">${s + 1}</span>` + (id ? `<div class="icon">${POWERUPS[id].icon}</div><div class="name">${POWERUPS[id].name}</div>` : '');
       inv.appendChild(d);
     }
@@ -1170,7 +1176,8 @@
     const r = pipRect(), el = $('pip');
     el.style.width = r.w + 'px'; el.style.height = r.h + 'px';
     el.classList.toggle('big', pipBig);
-    $('pipLabel').textContent = pipBig ? 'Follow cam · click to shrink' : 'Follow cam · click to enlarge';
+    const verb = TOUCH ? 'tap' : 'click';
+    $('pipLabel').textContent = pipBig ? `Follow cam · ${verb} to shrink` : `Follow cam · ${verb} to enlarge`;
     chaseCam.aspect = r.w / r.h; chaseCam.updateProjectionMatrix();
   }
   $('pip').addEventListener('mousedown', (e) => { e.stopPropagation(); pipBig = !pipBig; layoutPip(); });
@@ -1514,8 +1521,8 @@
     // play area you can see coming is reachable, in the air or on the ground.
     let steerIn = 0;
     if (phase === 'rider') {
-      if (keys.KeyA || keys.ArrowLeft) steerIn -= 1;
-      if (keys.KeyD || keys.ArrowRight) steerIn += 1;
+      if (keys.KeyA || keys.ArrowLeft || touchL) steerIn -= 1;
+      if (keys.KeyD || keys.ArrowRight || touchR) steerIn += 1;
     }
     P.steer = lerp(P.steer, steerIn, 0.2);
     const latMax = Math.max(STEER_SPEED, P.h * 0.4);
@@ -1907,8 +1914,47 @@
     if (e.code === 'Enter' && (phase === 'title' || phase === 'results')) startRun();
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
-  $('startBtn').addEventListener('click', () => { startRun(); Sound.button(); });
-  $('againBtn').addEventListener('click', () => { startRun(); Sound.button(); });
+  // Touch: hold the left or right half of the screen to steer, tap anywhere to swing,
+  // tap a powerup slot to use it, tap the follow cam to resize it.
+  let touchL = false, touchR = false;
+  const onUi = (el) => el && el.closest && el.closest('button, .screen, #rotate');
+  function readTouches(e) {
+    let l = false, r = false;
+    for (const t of e.touches) {
+      if (onUi(t.target) || t.target.closest('#pip, .slot')) continue;
+      if (t.clientX < innerWidth / 2) l = true; else r = true;
+    }
+    touchL = l; touchR = r;
+    $('touchL').classList.toggle('on', l);
+    $('touchR').classList.toggle('on', r);
+  }
+  if (TOUCH) {
+    addEventListener('touchstart', (e) => {
+      if (onUi(e.target)) return; // let buttons and menus behave normally
+      e.preventDefault();         // no zoom, scroll or fake mouse clicks
+      for (const t of e.changedTouches) {
+        const slot = t.target.closest('.slot');
+        if (slot) { usePowerup(+slot.dataset.slot); continue; }
+        if (t.target.closest('#pip')) { pipBig = !pipBig; layoutPip(); continue; }
+        if (phase === 'hitter') swing();
+      }
+      readTouches(e);
+    }, { passive: false });
+    addEventListener('touchmove', (e) => { if (!onUi(e.target)) e.preventDefault(); readTouches(e); }, { passive: false });
+    addEventListener('touchend', readTouches);
+    addEventListener('touchcancel', readTouches);
+  }
+  // On phones, go fullscreen and lock to landscape where the browser allows it (Android Chrome does; iPhone doesn't).
+  function goFullscreen() {
+    if (!TOUCH || document.fullscreenElement) return;
+    const el = document.documentElement;
+    if (!el.requestFullscreen) return;
+    el.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+      .catch(() => {});
+  }
+  $('startBtn').addEventListener('click', () => { goFullscreen(); startRun(); Sound.button(); });
+  $('againBtn').addEventListener('click', () => { goFullscreen(); startRun(); Sound.button(); });
 
   // ------------------------------------------------------------------
   // Main loop
@@ -1922,6 +1968,8 @@
   const clock = new THREE.Clock();
   let titleT = 0;
   function frame() {
+    // Paused while a phone is held upright (the "turn sideways" screen is showing).
+    if (isPortrait()) { clock.getDelta(); requestAnimationFrame(frame); return; }
     const realDt = Math.min(clock.getDelta(), 1 / 30);
     const dt = realDt * timeScale;
 

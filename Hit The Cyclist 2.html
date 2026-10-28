@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Hit The Cyclist 2</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
@@ -114,6 +117,62 @@ button:active { transform: translateY(4px); box-shadow: 0 2px 0 #b3401a; }
 .dial-read { fill: #fff; font-size: 13px; font-weight: bold; text-anchor: middle; }
 .dial-unit { fill: rgba(255,255,255,.7); font-size: 7px; text-anchor: middle; letter-spacing: .5px; }
 
+/* ---------- Phones / tablets (body.touch is set by game.js) ---------- */
+body:not(.touch) .tc { display: none !important; }
+body.touch .kb { display: none !important; }
+body.touch { touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+body.touch .slot { pointer-events: auto; }
+body.touch .slot .key { display: none; }
+body.touch .screen { overflow-y: auto; touch-action: pan-y; justify-content: safe center; }
+.touchHow { font-size: 15px; line-height: 1.5; max-width: 640px; margin: 0 0 18px; opacity: .9; }
+
+/* Faint arrows at the screen edges; they light up while that side is held */
+.touchZone { position: absolute; top: 50%; transform: translateY(-50%); width: 56px; height: 96px;
+  display: flex; align-items: center; justify-content: center; font-size: 28px; color: rgba(255,255,255,.35);
+  background: rgba(10,20,35,.18); border-radius: 14px; transition: background .1s, color .1s; }
+#touchL { left: max(10px, env(safe-area-inset-left)); }
+#touchR { right: max(10px, env(safe-area-inset-right)); }
+.touchZone.on { background: rgba(255,210,63,.35); color: #fff; }
+
+/* Shown over everything when a phone is held upright; the game pauses meanwhile */
+#rotate { display: none; position: fixed; inset: 0; z-index: 100; background: #0a1423; color: #fff;
+  flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: 20px;
+  font-weight: bold; text-align: center; padding: 30px; }
+.rotIcon { font-size: 64px; animation: rot 1.6s ease-in-out infinite; }
+@keyframes rot { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+@media (orientation: portrait) { body.touch #rotate { display: flex; } }
+
+/* Short landscape screens (phones): shrink the HUD and menus */
+@media (max-height: 520px) {
+  #topbar { top: 4px; gap: 6px; }
+  .stat { font-size: 15px; padding: 3px 8px; min-width: 64px; border-radius: 8px; }
+  .label { font-size: 9px; letter-spacing: .5px; }
+  .dial { width: 70px; height: 70px; margin-top: -2px; }
+  #hitterHint, #cyclistHint { top: 76px; font-size: 12px; padding: 5px 12px; }
+  #incoming { font-size: 13px; right: 16px; }
+  #inventory { bottom: 10px; right: max(12px, env(safe-area-inset-right)); gap: 6px; }
+  .slot { width: 56px; height: 56px; border-radius: 10px; }
+  .slot .icon { font-size: 24px; line-height: 38px; }
+  .slot .name { font-size: 8px; bottom: 3px; }
+  #effects { top: 70px; left: max(12px, env(safe-area-inset-left)); gap: 4px; }
+  .effect { font-size: 12px; padding: 4px 8px; }
+  #toasts { top: 70px; right: max(12px, env(safe-area-inset-right)); gap: 5px; }
+  .toast { font-size: 12px; padding: 5px 10px; }
+  #bigText { font-size: 40px; }
+  #pipLabel { font-size: 10px; }
+  .screen { padding: 12px; }
+  .screen h1 { font-size: 40px; letter-spacing: 2px; }
+  .sub { font-size: 16px; margin: 4px 0 12px; }
+  .howto { gap: 10px; margin-bottom: 14px; }
+  .howto p { font-size: 12px; line-height: 1.35; }
+  .howto h3 { font-size: 15px; margin: 6px 0 4px; }
+  button { font-size: 20px; padding: 10px 36px; }
+  #resDist { font-size: 56px; margin: 4px 0; }
+  #resNew, #resNote { font-size: 18px; margin-bottom: 6px; }
+  #resStats { grid-template-columns: repeat(3, 130px); gap: 6px; margin: 6px 0 14px; }
+  #resStats div { font-size: 15px; padding: 6px; }
+}
+
 </style>
 </head>
 <body>
@@ -132,13 +191,15 @@ button:active { transform: translateY(4px); box-shadow: 0 2px 0 #b3401a; }
   <div id="hitterHud">
     <div id="crosshair"></div>
     <div id="incoming"></div>
-    <div id="hitterHint">Swing (click / Space) as the cyclist rides through the grass · dead centre between the patches = furthest</div>
+    <div id="hitterHint"><span class="kb">Swing (click / Space) as the cyclist rides through the grass · dead centre between the patches = furthest</span><span class="tc">Tap to swing as the cyclist rides through the grass · dead centre = furthest</span></div>
   </div>
 
   <div id="cyclistHud">
     <div id="effects"></div>
     <div id="inventory"></div>
-    <div id="cyclistHint">A / D to steer &nbsp;·&nbsp; 1 2 3 (or Space for slot 1) to use powerups</div>
+    <div id="touchL" class="touchZone tc">◀</div>
+    <div id="touchR" class="touchZone tc">▶</div>
+    <div id="cyclistHint"><span class="kb">A / D to steer &nbsp;·&nbsp; 1 2 3 (or Space for slot 1) to use powerups</span><span class="tc">Hold left / right side to steer &nbsp;·&nbsp; tap a powerup to use it</span></div>
   </div>
 
   <div id="bigText"></div>
@@ -150,12 +211,14 @@ button:active { transform: translateY(4px); box-shadow: 0 2px 0 #b3401a; }
 
 <div id="pip" class="hidden"><span id="pipLabel">Follow cam · click to enlarge</span></div>
 <div id="flash"></div>
+<div id="rotate"><div class="rotIcon">📱</div><div>Turn your phone sideways to play</div></div>
 
 <!-- Title screen -->
 <div id="title" class="screen">
   <h1>HIT THE CYCLIST <span>2</span></h1>
   <p class="sub">Whack the cyclist. Then <b>become</b> the cyclist.</p>
-  <div class="howto">
+  <p class="tc touchHow">Tap to whack the cyclist off the cliff: dead centre between the grass patches goes furthest.<br>Then hold the <b>left</b> or <b>right</b> side of the screen to steer onto molehills. Don't land too steep!<br>Tap your powerup slots (bottom right) to use them.</p>
+  <div class="howto kb">
     <div>
       <h3>1 · Hitter</h3>
       <p>You're at the top of a cliff. A cyclist rides toward the edge, through two grass patches.<br>Swing as they ride through: <b>early</b> sends them higher (risky), <b>late</b> sends them flatter and faster.<br>Dead centre, between the patches, goes furthest and earns a free 🚀.<br>Miss, and they ride off the edge anyway, slow and steep.</p>
@@ -179,7 +242,7 @@ button:active { transform: translateY(4px); box-shadow: 0 2px 0 #b3401a; }
   <div id="resNew" class="hidden">New best!</div>
   <div id="resNote" class="hidden"></div>
   <div id="resStats"></div>
-  <button id="againBtn">Play again (R)</button>
+  <button id="againBtn">Play again<span class="kb"> (R)</span></button>
 </div>
 
 <script>
@@ -270,8 +333,13 @@ window.ORIGINAL_SOUNDS = {"button": "//NAwAAAAAJYAUAAAPCeAXG7gSAAM/HsHM/EWCmA7Pw
   // ------------------------------------------------------------------
   // Renderer / scene / cameras
   // ------------------------------------------------------------------
+  // Phones and tablets: tap controls, landscape only. Add ?touch to the URL to force it on a desktop.
+  const TOUCH = matchMedia('(pointer: coarse)').matches || /[?&]touch\b/.test(location.search);
+  if (TOUCH) document.body.classList.add('touch');
+  const isPortrait = () => TOUCH && innerHeight > innerWidth;
+
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, TOUCH ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -328,7 +396,7 @@ window.ORIGINAL_SOUNDS = {"button": "//NAwAAAAAJYAUAAAPCeAXG7gSAAM/HsHM/EWCmA7Pw
   scene.add(new THREE.HemisphereLight(0xe6f4ff, 0x8a6a48, 0.8));
   const sun = new THREE.DirectionalLight(0xfff1d0, 0.9);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(TOUCH ? 1024 : 2048, TOUCH ? 1024 : 2048);
   Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 260 });
   sun.shadow.bias = -0.0006;
   scene.add(sun, sun.target);
@@ -1330,6 +1398,7 @@ window.ORIGINAL_SOUNDS = {"button": "//NAwAAAAAJYAUAAAPCeAXG7gSAAM/HsHM/EWCmA7Pw
       const d = document.createElement('div');
       const id = P.inv[s];
       d.className = 'slot' + (id ? ' full' : '');
+      d.dataset.slot = s;
       d.innerHTML = `<span class="key">${s + 1}</span>` + (id ? `<div class="icon">${POWERUPS[id].icon}</div><div class="name">${POWERUPS[id].name}</div>` : '');
       inv.appendChild(d);
     }
@@ -1370,7 +1439,8 @@ window.ORIGINAL_SOUNDS = {"button": "//NAwAAAAAJYAUAAAPCeAXG7gSAAM/HsHM/EWCmA7Pw
     const r = pipRect(), el = $('pip');
     el.style.width = r.w + 'px'; el.style.height = r.h + 'px';
     el.classList.toggle('big', pipBig);
-    $('pipLabel').textContent = pipBig ? 'Follow cam · click to shrink' : 'Follow cam · click to enlarge';
+    const verb = TOUCH ? 'tap' : 'click';
+    $('pipLabel').textContent = pipBig ? `Follow cam · ${verb} to shrink` : `Follow cam · ${verb} to enlarge`;
     chaseCam.aspect = r.w / r.h; chaseCam.updateProjectionMatrix();
   }
   $('pip').addEventListener('mousedown', (e) => { e.stopPropagation(); pipBig = !pipBig; layoutPip(); });
@@ -1714,8 +1784,8 @@ window.ORIGINAL_SOUNDS = {"button": "//NAwAAAAAJYAUAAAPCeAXG7gSAAM/HsHM/EWCmA7Pw
     // play area you can see coming is reachable, in the air or on the ground.
     let steerIn = 0;
     if (phase === 'rider') {
-      if (keys.KeyA || keys.ArrowLeft) steerIn -= 1;
-      if (keys.KeyD || keys.ArrowRight) steerIn += 1;
+      if (keys.KeyA || keys.ArrowLeft || touchL) steerIn -= 1;
+      if (keys.KeyD || keys.ArrowRight || touchR) steerIn += 1;
     }
     P.steer = lerp(P.steer, steerIn, 0.2);
     const latMax = Math.max(STEER_SPEED, P.h * 0.4);
@@ -2107,8 +2177,47 @@ window.ORIGINAL_SOUNDS = {"button": "//NAwAAAAAJYAUAAAPCeAXG7gSAAM/HsHM/EWCmA7Pw
     if (e.code === 'Enter' && (phase === 'title' || phase === 'results')) startRun();
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
-  $('startBtn').addEventListener('click', () => { startRun(); Sound.button(); });
-  $('againBtn').addEventListener('click', () => { startRun(); Sound.button(); });
+  // Touch: hold the left or right half of the screen to steer, tap anywhere to swing,
+  // tap a powerup slot to use it, tap the follow cam to resize it.
+  let touchL = false, touchR = false;
+  const onUi = (el) => el && el.closest && el.closest('button, .screen, #rotate');
+  function readTouches(e) {
+    let l = false, r = false;
+    for (const t of e.touches) {
+      if (onUi(t.target) || t.target.closest('#pip, .slot')) continue;
+      if (t.clientX < innerWidth / 2) l = true; else r = true;
+    }
+    touchL = l; touchR = r;
+    $('touchL').classList.toggle('on', l);
+    $('touchR').classList.toggle('on', r);
+  }
+  if (TOUCH) {
+    addEventListener('touchstart', (e) => {
+      if (onUi(e.target)) return; // let buttons and menus behave normally
+      e.preventDefault();         // no zoom, scroll or fake mouse clicks
+      for (const t of e.changedTouches) {
+        const slot = t.target.closest('.slot');
+        if (slot) { usePowerup(+slot.dataset.slot); continue; }
+        if (t.target.closest('#pip')) { pipBig = !pipBig; layoutPip(); continue; }
+        if (phase === 'hitter') swing();
+      }
+      readTouches(e);
+    }, { passive: false });
+    addEventListener('touchmove', (e) => { if (!onUi(e.target)) e.preventDefault(); readTouches(e); }, { passive: false });
+    addEventListener('touchend', readTouches);
+    addEventListener('touchcancel', readTouches);
+  }
+  // On phones, go fullscreen and lock to landscape where the browser allows it (Android Chrome does; iPhone doesn't).
+  function goFullscreen() {
+    if (!TOUCH || document.fullscreenElement) return;
+    const el = document.documentElement;
+    if (!el.requestFullscreen) return;
+    el.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+      .catch(() => {});
+  }
+  $('startBtn').addEventListener('click', () => { goFullscreen(); startRun(); Sound.button(); });
+  $('againBtn').addEventListener('click', () => { goFullscreen(); startRun(); Sound.button(); });
 
   // ------------------------------------------------------------------
   // Main loop
@@ -2122,6 +2231,8 @@ window.ORIGINAL_SOUNDS = {"button": "//NAwAAAAAJYAUAAAPCeAXG7gSAAM/HsHM/EWCmA7Pw
   const clock = new THREE.Clock();
   let titleT = 0;
   function frame() {
+    // Paused while a phone is held upright (the "turn sideways" screen is showing).
+    if (isPortrait()) { clock.getDelta(); requestAnimationFrame(frame); return; }
     const realDt = Math.min(clock.getDelta(), 1 / 30);
     const dt = realDt * timeScale;
 

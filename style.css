@@ -106,3 +106,59 @@ button:active { transform: translateY(4px); box-shadow: 0 2px 0 #b3401a; }
 .dial-hub { fill: #ffd23f; }
 .dial-read { fill: #fff; font-size: 13px; font-weight: bold; text-anchor: middle; }
 .dial-unit { fill: rgba(255,255,255,.7); font-size: 7px; text-anchor: middle; letter-spacing: .5px; }
+
+/* ---------- Phones / tablets (body.touch is set by game.js) ---------- */
+body:not(.touch) .tc { display: none !important; }
+body.touch .kb { display: none !important; }
+body.touch { touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+body.touch .slot { pointer-events: auto; }
+body.touch .slot .key { display: none; }
+body.touch .screen { overflow-y: auto; touch-action: pan-y; justify-content: safe center; }
+.touchHow { font-size: 15px; line-height: 1.5; max-width: 640px; margin: 0 0 18px; opacity: .9; }
+
+/* Faint arrows at the screen edges; they light up while that side is held */
+.touchZone { position: absolute; top: 50%; transform: translateY(-50%); width: 56px; height: 96px;
+  display: flex; align-items: center; justify-content: center; font-size: 28px; color: rgba(255,255,255,.35);
+  background: rgba(10,20,35,.18); border-radius: 14px; transition: background .1s, color .1s; }
+#touchL { left: max(10px, env(safe-area-inset-left)); }
+#touchR { right: max(10px, env(safe-area-inset-right)); }
+.touchZone.on { background: rgba(255,210,63,.35); color: #fff; }
+
+/* Shown over everything when a phone is held upright; the game pauses meanwhile */
+#rotate { display: none; position: fixed; inset: 0; z-index: 100; background: #0a1423; color: #fff;
+  flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: 20px;
+  font-weight: bold; text-align: center; padding: 30px; }
+.rotIcon { font-size: 64px; animation: rot 1.6s ease-in-out infinite; }
+@keyframes rot { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+@media (orientation: portrait) { body.touch #rotate { display: flex; } }
+
+/* Short landscape screens (phones): shrink the HUD and menus */
+@media (max-height: 520px) {
+  #topbar { top: 4px; gap: 6px; }
+  .stat { font-size: 15px; padding: 3px 8px; min-width: 64px; border-radius: 8px; }
+  .label { font-size: 9px; letter-spacing: .5px; }
+  .dial { width: 70px; height: 70px; margin-top: -2px; }
+  #hitterHint, #cyclistHint { top: 76px; font-size: 12px; padding: 5px 12px; }
+  #incoming { font-size: 13px; right: 16px; }
+  #inventory { bottom: 10px; right: max(12px, env(safe-area-inset-right)); gap: 6px; }
+  .slot { width: 56px; height: 56px; border-radius: 10px; }
+  .slot .icon { font-size: 24px; line-height: 38px; }
+  .slot .name { font-size: 8px; bottom: 3px; }
+  #effects { top: 70px; left: max(12px, env(safe-area-inset-left)); gap: 4px; }
+  .effect { font-size: 12px; padding: 4px 8px; }
+  #toasts { top: 70px; right: max(12px, env(safe-area-inset-right)); gap: 5px; }
+  .toast { font-size: 12px; padding: 5px 10px; }
+  #bigText { font-size: 40px; }
+  #pipLabel { font-size: 10px; }
+  .screen { padding: 12px; }
+  .screen h1 { font-size: 40px; letter-spacing: 2px; }
+  .sub { font-size: 16px; margin: 4px 0 12px; }
+  .howto { gap: 10px; margin-bottom: 14px; }
+  .howto p { font-size: 12px; line-height: 1.35; }
+  .howto h3 { font-size: 15px; margin: 6px 0 4px; }
+  button { font-size: 20px; padding: 10px 36px; }
+  #resDist { font-size: 56px; margin: 4px 0; }
+  #resNew, #resNote { font-size: 18px; margin-bottom: 6px; }
+  #resStats { grid-template-columns: repeat(3, 130px); gap: 6px; margin: 6px 0 14px; }
+  #resStats div { font-size: 15px; padding: 6px; }
+}
