@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hit The Cyclist 2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game"></div>
+
+<!-- In-game HUD -->
+<div id="hud" class="hidden">
+  <div id="topbar">
+    <div class="stat"><span class="label">Distance</span><span id="hDist">0 m</span></div>
+    <div class="dial" id="dialSpeed"></div>
+    <div class="dial" id="dialHeight"></div>
+    <div class="stat"><span class="label">Molehills</span><span id="hMoles">0</span></div>
+    <div class="stat"><span class="label">Best</span><span id="hBest">0 m</span></div>
+  </div>
+
+  <div id="hitterHud">
+    <div id="crosshair"></div>
+    <div id="incoming"></div>
+    <div id="hitterHint">Swing (click / Space) as the cyclist rides through the grass · dead centre between the patches = furthest</div>
+  </div>
+
+  <div id="cyclistHud">
+    <div id="effects"></div>
+    <div id="inventory"></div>
+    <div id="cyclistHint">A / D to steer &nbsp;·&nbsp; 1 2 3 (or Space for slot 1) to use powerups</div>
+  </div>
+
+  <div id="bigText"></div>
+  <div id="toasts"></div>
+  <div id="rocketGlow"></div>
+  <div id="splat"></div>
+  <div id="blood"></div>
+</div>
+
+<div id="pip" class="hidden"><span id="pipLabel">Follow cam · click to enlarge</span></div>
+<div id="flash"></div>
+
+<!-- Title screen -->
+<div id="title" class="screen">
+  <h1>HIT THE CYCLIST <span>2</span></h1>
+  <p class="sub">Whack the cyclist. Then <b>become</b> the cyclist.</p>
+  <div class="howto">
+    <div>
+      <h3>1 · Hitter</h3>
+      <p>You're at the top of a cliff. A cyclist rides toward the edge, through two grass patches.<br>Swing as they ride through: <b>early</b> sends them higher (risky), <b>late</b> sends them flatter and faster.<br>Dead centre, between the patches, goes furthest and earns a free 🚀.<br>Miss, and they ride off the edge anyway, slow and steep.</p>
+    </div>
+    <div>
+      <h3>2 · Cyclist</h3>
+      <p>You're knocked off the bike and bounce along the dirt on your belly.<br>Steer with <b>A / D</b> to land on molehills. Hit them in a row for a bigger launch each time.<br>Come down from too high, or too steeply, or hit a rock, and you'll splut head-first. That ends the run!<br>Mud slows you, arrows speed you up.<br>Grab <b>?</b> boxes on the ground for powerups. Fly through low clouds: some hide a 🪂 wingsuit.<br>Stop near a molehill and its owner will let you know how they feel.<br>10 easter eggs are hidden out there. Crash into them for a surprise…<br>Click the follow cam (bottom left) to enlarge it.</p>
+    </div>
+    <div>
+      <h3>Powerups</h3>
+      <p>Rare! Only from ? boxes lying on the ground, a perfect hit, or a 5-molehill chain.<br>Use them with <b>1 2 3</b> whenever you like.</p>
+    </div>
+  </div>
+  <button id="startBtn">Play</button>
+</div>
+
+<!-- Results screen -->
+<div id="results" class="screen hidden">
+  <h1 id="resTitle">Run over!</h1>
+  <div id="resDist">0 m</div>
+  <div id="resNew" class="hidden">New best!</div>
+  <div id="resNote" class="hidden"></div>
+  <div id="resStats"></div>
+  <button id="againBtn">Play again (R)</button>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="sounds.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

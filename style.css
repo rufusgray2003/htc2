@@ -1,0 +1,108 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif; color: #fff; user-select: none; }
+#game canvas { display: block; }
+.hidden { display: none !important; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#topbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 10px; align-items: flex-start; }
+.stat { background: rgba(10, 20, 35, .55); border-radius: 10px; padding: 6px 14px;
+  min-width: 100px; text-align: center; font-size: 22px; font-weight: bold;
+  text-shadow: 0 2px 2px rgba(0,0,0,.4); }
+.label { display: block; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: .75; font-weight: normal; }
+
+#crosshair { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px;
+  border: 2px solid rgba(255,255,255,.8); border-radius: 50%; }
+#aimVal { font-size: 34px; font-weight: bold; }
+#aimBar { height: 8px; background: rgba(255,255,255,.2); border-radius: 4px; margin: 6px 0; overflow: hidden; }
+#aimFill { height: 100%; width: 50%; background: linear-gradient(90deg, #ffd23f, #ff6b35); }
+.hint { font-size: 11px; opacity: .7; }
+#incoming { position: absolute; right: 24px; top: 50%; transform: translateY(-50%);
+  font-size: 18px; text-align: right; text-shadow: 0 2px 3px rgba(0,0,0,.6); }
+#hitterHint, #cyclistHint { position: absolute; top: 122px; left: 50%; transform: translateX(-50%);
+  background: rgba(10,20,35,.55); padding: 8px 16px; border-radius: 20px; font-size: 15px; white-space: nowrap; }
+
+#inventory { position: absolute; bottom: 70px; right: 20px; display: flex; gap: 10px; }
+.slot { width: 74px; height: 74px; border-radius: 12px; background: rgba(10,20,35,.6);
+  border: 2px solid rgba(255,255,255,.25); position: relative; text-align: center; }
+.slot.full { border-color: #ffd23f; box-shadow: 0 0 12px rgba(255,210,63,.5); }
+.slot .icon { font-size: 34px; line-height: 52px; }
+.slot .name { font-size: 10px; position: absolute; bottom: 4px; left: 0; right: 0; opacity: .85; }
+.slot .key { position: absolute; top: 2px; left: 6px; font-size: 12px; opacity: .7; }
+#effects { position: absolute; top: 90px; left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.effect { background: rgba(10,20,35,.6); padding: 6px 12px; border-radius: 8px; font-size: 16px; }
+
+#bigText { position: absolute; top: 28%; left: 0; right: 0; text-align: center; font-size: 64px;
+  font-weight: 900; letter-spacing: 2px; color: #ffd23f; opacity: 0;
+  text-shadow: 0 4px 0 #b3401a, 0 8px 20px rgba(0,0,0,.5); transition: opacity .2s, transform .2s; }
+#bigText.show { opacity: 1; transform: scale(1.08); }
+#toasts { position: absolute; top: 90px; right: 20px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.toast { background: rgba(255,210,63,.95); color: #3a2200; font-weight: bold; padding: 8px 14px;
+  border-radius: 10px; font-size: 16px; animation: toastIn .25s ease-out, toastOut .4s ease-in 2.6s forwards; }
+.toast.bad { background: rgba(230,70,60,.95); color: #fff; }
+.toast.info { background: rgba(80,170,255,.95); color: #fff; }
+@keyframes toastIn { from { transform: translateX(40px); opacity: 0; } }
+@keyframes toastOut { to { transform: translateX(40px); opacity: 0; } }
+#rocketGlow { position: absolute; inset: 0; opacity: 0; transition: opacity .2s;
+  box-shadow: inset 0 0 160px 40px rgba(255,120,30,.75); }
+
+#flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
+#flash.on { opacity: 1; transition: opacity .08s; }
+
+/* ---------- Screens ---------- */
+.screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(20,40,70,.75), rgba(5,10,20,.92)); text-align: center; padding: 20px; }
+.screen h1 { font-size: 72px; margin: 0; color: #ffd23f; letter-spacing: 3px;
+  text-shadow: 0 5px 0 #b3401a, 0 10px 30px rgba(0,0,0,.6); }
+.screen h1 span { color: #fff; }
+.sub { font-size: 22px; margin: 10px 0 30px; opacity: .9; }
+.howto { display: flex; gap: 18px; max-width: 1000px; margin-bottom: 30px; }
+.howto div { background: rgba(255,255,255,.08); border-radius: 14px; padding: 6px 18px 12px; flex: 1; }
+.howto h3 { color: #ffd23f; margin: 10px 0 6px; }
+.howto p { font-size: 15px; line-height: 1.5; margin: 0; opacity: .9; }
+button { font: inherit; font-size: 26px; font-weight: bold; padding: 14px 48px; border: 0; border-radius: 40px;
+  background: linear-gradient(#ffd23f, #ff9f1c); color: #3a2200; cursor: pointer; box-shadow: 0 6px 0 #b3401a; }
+button:hover { filter: brightness(1.08); }
+button:active { transform: translateY(4px); box-shadow: 0 2px 0 #b3401a; }
+#resDist { font-size: 96px; font-weight: 900; margin: 10px 0; }
+#resNew { color: #ffd23f; font-size: 28px; font-weight: bold; margin-bottom: 10px; animation: pulse 1s infinite alternate; }
+@keyframes pulse { to { transform: scale(1.12); } }
+#resStats { display: grid; grid-template-columns: repeat(3, 170px); gap: 10px; margin: 10px 0 30px; }
+#resStats div { background: rgba(255,255,255,.08); border-radius: 10px; padding: 10px; font-size: 22px; font-weight: bold; }
+
+#pip { position: fixed; left: 16px; bottom: 16px; border: 3px solid rgba(255,255,255,.85); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.45); cursor: zoom-in; pointer-events: auto; }
+#pip.big { cursor: zoom-out; }
+#pipLabel { position: absolute; top: 4px; left: 6px; font-size: 12px; background: rgba(10,20,35,.6);
+  padding: 2px 8px; border-radius: 6px; }
+#splat { position: absolute; inset: 0; opacity: 0;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(110,70,35,.95) 0 12%, transparent 13%),
+    radial-gradient(circle at 70% 60%, rgba(95,60,30,.95) 0 15%, transparent 16%),
+    radial-gradient(circle at 55% 25%, rgba(120,80,40,.9) 0 8%, transparent 9%),
+    radial-gradient(circle at 20% 75%, rgba(100,65,30,.9) 0 10%, transparent 11%),
+    radial-gradient(ellipse at center, rgba(90,58,28,.55) 0 40%, rgba(70,45,20,.95) 75%); }
+#resNote { color: #ffb38a; font-size: 22px; font-weight: bold; margin-bottom: 10px; }
+#blood { position: absolute; inset: 0; opacity: 0;
+  background:
+    radial-gradient(circle at 48% 45%, rgba(160,0,0,.7) 0 14%, transparent 15%),
+    radial-gradient(circle at 62% 36%, rgba(140,0,0,.65) 0 6%, transparent 7%),
+    radial-gradient(circle at 35% 58%, rgba(150,0,0,.65) 0 8%, transparent 9%),
+    radial-gradient(circle at 56% 66%, rgba(130,0,0,.6) 0 5%, transparent 6%),
+    radial-gradient(circle at 28% 32%, rgba(150,0,0,.55) 0 4%, transparent 5%),
+    radial-gradient(circle at 72% 54%, rgba(150,0,0,.55) 0 3%, transparent 4%),
+    radial-gradient(ellipse at center, transparent 35%, rgba(120,0,0,.5) 85%); }
+.toast.egg { background: rgba(156,39,176,.95); color: #fff; }
+.dial { width: 108px; height: 108px; margin-top: -4px; filter: drop-shadow(0 3px 4px rgba(0,0,0,.4)); }
+.dial svg { width: 100%; height: 100%; }
+.dial-face { fill: rgba(10,20,35,.72); stroke: rgba(255,255,255,.75); stroke-width: 2; }
+.dial-red { fill: none; stroke: #ff4d3d; stroke-width: 5; opacity: .85; }
+.dial-major { stroke: #fff; stroke-width: 2; }
+.dial-minor { stroke: rgba(255,255,255,.55); stroke-width: 1; }
+.dial-num { fill: rgba(255,255,255,.85); font-size: 8px; text-anchor: middle; font-weight: bold; }
+.dial-needle { stroke: #ffd23f; stroke-width: 3; stroke-linecap: round; transition: none; }
+.dial-hub { fill: #ffd23f; }
+.dial-read { fill: #fff; font-size: 13px; font-weight: bold; text-anchor: middle; }
+.dial-unit { fill: rgba(255,255,255,.7); font-size: 7px; text-anchor: middle; letter-spacing: .5px; }
