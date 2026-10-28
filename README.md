@@ -7,6 +7,9 @@ Open `index.html` in Chrome or Edge. From Windows the path is
 `\\wsl$\Ubuntu-22.04\home\rufus\projects\htc2\index.html`.
 (Or run `python3 -m http.server` in this folder and go to http://localhost:8000.)
 
+## Play online
+https://rufusgray2003.github.io/htc2/ (works on desktop and phones)
+
 ## On a phone
 The same file works on phones and tablets, in landscape only. Held upright, it shows a "turn sideways" screen and pauses.
 - **Hitter:** tap anywhere to swing.
@@ -75,8 +78,7 @@ The results screen shows how many you found in the run and all-time.
 
 ## Sounds
 `sounds.js` holds the 7 sounds extracted from the original game file (swing, bat thud, belly thud, splat, mole,
-sparkle, button). They belong to the original game's creators, so keep them for personal use and don't
-publish them. Delete `sounds.js` and the game falls back to its own synthesized sounds.
+sparkle, button). They're in the public domain. Delete `sounds.js` and the game falls back to its own synthesized sounds.
 
 ## Sharing as one file
 `Hit The Cyclist 2.html` is the whole game in a single file (about 720 KB), with the page, styles, three.js,
