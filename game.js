@@ -571,6 +571,258 @@
   const flipLook = new THREE.Vector3();
 
   // ------------------------------------------------------------------
+  // 3D models (models.js): Dave (cyclist), Bob (batter) and the bike.
+  // They load at start-up and replace the simple shapes above, which stay as a fallback.
+  // Character: Quaternius "Universal Base Characters" (CC0). Bike: "Bicycle" by jeremy, Poly Pizza (CC-BY 3.0).
+  // ------------------------------------------------------------------
+  const DAVE_LOOK = { shirt: 0xc62828, stripe: 0xf5f5f5, pants: 0x1e4fa8, shoes: 0x222222, sleeve: 0.36, hair: 'Hair_Beard', hairTint: 0xffffff, helmet: 0xd32f2f };
+  const BOB_LOOK = { shirt: 0x5b7f3a, stripe: null, pants: 0x9a8a5e, shoes: 0x4a3222, sleeve: 0.69, hair: 'Hair_Buzzed', hairTint: 0x5a4030, helmet: null };
+  const people = { ready: false };
+  const _pv = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
+  const _pq = [0, 1, 2].map(() => new THREE.Quaternion());
+
+  // Paint clothes onto the bare base body, by where each point sits in the rest (T) pose.
+  function dressMaterial(mat, look) {
+    const U = {
+      cShirt: { value: new THREE.Color(look.shirt) }, cStripe: { value: new THREE.Color(look.stripe || look.shirt) },
+      cPants: { value: new THREE.Color(look.pants) }, cShoes: { value: new THREE.Color(look.shoes) },
+      sleeveX: { value: look.sleeve }, stripes: { value: look.stripe ? 1 : 0 },
+    };
+    mat.customProgramCacheKey = () => 'dressed';
+    mat.onBeforeCompile = function (shader) {
+      THREE.Material.prototype.onBeforeCompile.call(this, shader); // the shared haze uniforms
+      Object.assign(shader.uniforms, U);
+      shader.vertexShader = 'varying vec3 vBind;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvBind = position;');
+      shader.fragmentShader = 'varying vec3 vBind;\nuniform vec3 cShirt, cStripe, cPants, cShoes;\nuniform float sleeveX, stripes;\n' +
+        shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+        {
+          float ax = abs(vBind.x), y = vBind.y; vec3 cloth = vec3(-1.0);
+          if (y < 0.13) cloth = cShoes;
+          else if (y < 0.99 && ax < 0.3) cloth = cPants;
+          else if ((y < 1.49 || (y < 1.56 && ax > 0.09)) && ax < sleeveX) {
+            cloth = cShirt;
+            if (stripes > 0.5 && ax < 0.24 && fract(vBind.x * 11.0 + 0.5) < 0.2) cloth = cStripe;
+          }
+          if (cloth.r >= 0.0) diffuseColor.rgb = cloth * (0.82 + 0.18 * dot(diffuseColor.rgb, vec3(0.6)));
+        }`);
+    };
+    return mat;
+  }
+
+  function decodeModel(loader, b64) {
+    const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return new Promise((res, rej) => loader.parse(bin.buffer, '', res, rej));
+  }
+
+  function makePerson(gltf, look) {
+    const model = gltf.scene;
+    const wrap = new THREE.Group();          // faces -Z like everything else in the game
+    const turn = new THREE.Group(); turn.rotation.y = Math.PI;
+    wrap.add(turn); turn.add(model);
+    const B = {}, bones = [];
+    model.traverse((n) => {
+      if (n.isBone) { B[n.name] = n; bones.push(n); }
+      if (n.isMesh) {
+        const old = n.material;
+        if (old.map) old.map.encoding = THREE.LinearEncoding; // the game renders without sRGB conversion
+        n.material = new THREE.MeshLambertMaterial({ map: old.map, color: old.name === 'Hair' ? look.hairTint : 0xffffff });
+        if (old.name === 'Body') dressMaterial(n.material, look);
+        n.castShadow = true; n.frustumCulled = false;
+      }
+    });
+    // Hair: keep one style and pin it (and the helmet) to the head bone.
+    model.updateMatrixWorld(true);
+    const toHead = B.Head.matrixWorld.clone().invert();
+    for (const name of ['Hair_Beard', 'Hair_Buzzed']) {
+      const h = model.getObjectByName(name);
+      if (!h) continue;
+      if (name !== look.hair) { h.parent.remove(h); continue; }
+      h.applyMatrix4(toHead); B.Head.add(h);
+    }
+    if (look.helmet) {
+      const g = new THREE.SphereGeometry(0.135, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+      const helm = new THREE.Mesh(g, lam(look.helmet));
+      helm.scale.set(1.05, 0.95, 1.22); helm.position.set(0, 1.715, -0.012); helm.rotation.x = -0.12;
+      helm.castShadow = true;
+      helm.applyMatrix4(toHead); B.Head.add(helm);
+    }
+    for (const b of bones) b.userData.rest = b.quaternion.clone();
+    return { wrap, model, B, bones };
+  }
+
+  function resetPose(p) {
+    for (const b of p.bones) b.quaternion.copy(b.userData.rest);
+    p.wrap.updateWorldMatrix(true, true);
+  }
+  // Rotate a bone by a world-space rotation.
+  function rotWorld(bone, q) {
+    bone.parent.getWorldQuaternion(_pq[0]);
+    _pq[1].copy(_pq[0]).invert().multiply(q).multiply(_pq[0]);
+    bone.quaternion.premultiply(_pq[1]);
+    bone.updateMatrixWorld(true);
+  }
+  // Swing a bone so its child joint points at a world position.
+  function aim(bone, child, target) {
+    bone.getWorldPosition(_pv[0]); child.getWorldPosition(_pv[1]);
+    _pv[1].sub(_pv[0]).normalize();
+    _pv[2].copy(target).sub(_pv[0]).normalize();
+    rotWorld(bone, _pq[2].setFromUnitVectors(_pv[1], _pv[2]));
+  }
+  // Two-bone reach (thigh-calf-foot or upper arm-forearm-hand), bending toward `pole` (a world direction).
+  function reach(a, b, c, target, pole) {
+    const A = a.getWorldPosition(new THREE.Vector3()), Bp = b.getWorldPosition(new THREE.Vector3()), C = c.getWorldPosition(new THREE.Vector3());
+    const l1 = A.distanceTo(Bp), l2 = Bp.distanceTo(C);
+    const d = target.clone().sub(A);
+    const dist = clamp(d.length(), Math.abs(l1 - l2) + 0.01, l1 + l2 - 0.005); d.normalize();
+    const cosA = clamp((l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist), -1, 1), sinA = Math.sqrt(1 - cosA * cosA);
+    const bend = pole.clone().addScaledVector(d, -pole.dot(d)).normalize();
+    const mid = A.clone().addScaledVector(d, l1 * cosA).addScaledVector(bend, l1 * sinA);
+    aim(a, b, mid);
+    aim(b, c, A.addScaledVector(d, dist));
+  }
+  const worldAxis = (obj, x, y, z) => new THREE.Vector3(x, y, z).transformDirection(obj.matrixWorld);
+  const turnBone = (bone, axis, ang) => rotWorld(bone, new THREE.Quaternion().setFromAxisAngle(axis, ang));
+
+  function loadModels() {
+    if (!window.HTC_MODELS || !THREE.GLTFLoader) return;
+    const L = new THREE.GLTFLoader(), M_ = window.HTC_MODELS;
+    Promise.all([decodeModel(L, M_.man), decodeModel(L, M_.man), decodeModel(L, M_.man), decodeModel(L, M_.bike)])
+      .then(([g1, g2, g3, gb]) => {
+        setupBike(gb);
+        people.seated = makePerson(g1, DAVE_LOOK);
+        people.prone = makePerson(g2, DAVE_LOOK);
+        people.bob = makePerson(g3, BOB_LOOK);
+        setupSeated(); setupProne(); setupBob();
+        people.ready = true;
+      })
+      .catch((e) => console.warn('3D models failed to load; using simple shapes', e));
+  }
+
+  // Swap the simple bike for the model (frame recoloured to the original's dark red).
+  function setupBike(gltf) {
+    const inner = bike.tumble.children[0];
+    for (const c of inner.children) if (c !== bike.rider) c.visible = false;
+    const g = new THREE.Group(); g.position.z = 0.2; // centre the wheelbase on the tumble pivot
+    const mats = { FF5722: lam(0x9b1c1c), '1A1A1A': lam(0x1c1c1c), '78909C': lam(0x9aa7b0) };
+    const parts = {};
+    for (const n of [...gltf.scene.children]) {
+      n.traverse((m) => { if (m.isMesh) { m.material = mats[m.material.name] || lam(0x888888); m.castShadow = true; } });
+      parts[n.name] = n; g.add(n);
+    }
+    inner.add(g);
+    bike.wheels.length = 0; bike.wheels.push(parts.WheelF, parts.WheelR);
+    bike.crank = parts.Crank;
+    // Contact points for the rider, from the frame's geometry (in the bike's own space).
+    const saddle = new THREE.Vector3(0, -1, 0), grip = new THREE.Vector3(), v = new THREE.Vector3(); let gn = 0;
+    parts.Frame.traverse((m) => {
+      if (!m.isMesh || m.material !== mats['1A1A1A']) return;
+      const pos = m.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        if (v.z > 0 && v.y > saddle.y) saddle.copy(v);
+        if (Math.abs(v.x) > 0.17 && v.y > 0.75 && v.z < -0.4) { grip.x += Math.abs(v.x); grip.y += v.y; grip.z += v.z; gn++; }
+      }
+    });
+    grip.divideScalar(Math.max(gn, 1));
+    bike.fit = { saddle: saddle.add(g.position), grip: grip.add(g.position), bb: parts.Crank.position.clone().add(g.position) };
+  }
+
+  function setupSeated() {
+    const p = people.seated;
+    for (const c of bike.rider.children) c.visible = false;
+    bike.rider.add(p.wrap);
+    resetPose(p);
+    const pelvis = p.wrap.worldToLocal(p.B.pelvis.getWorldPosition(new THREE.Vector3()));
+    p.wrap.position.copy(bike.fit.saddle).add(new THREE.Vector3(0, 0.07, 0.05)).sub(pelvis);
+  }
+
+  function setupProne() {
+    const p = people.prone;
+    for (const c of prone.body.children) if (c !== proneWings) c.visible = false;
+    // lie face-down, head forward, belly at the origin
+    p.wrap.rotation.x = -Math.PI / 2;
+    p.wrap.position.set(0, 0.12, 1.1);
+    prone.body.add(p.wrap);
+    setLayer(p.wrap, LAYER_RIDER);
+  }
+
+  function setupBob() {
+    const p = people.bob;
+    for (const c of hitter.root.children) if (c !== hitter.batPivot) c.visible = false;
+    p.wrap.rotation.y = Math.PI / 2; // he faces -X in the hitter's space, where the bat sweeps
+    hitter.root.add(p.wrap);
+    setLayer(p.wrap, LAYER_HITTER);
+  }
+
+  function poseSeated() {
+    const p = people.seated, B_ = p.B;
+    resetPose(p);
+    const W = p.wrap;
+    const fwd = worldAxis(W, 1, 0, 0);
+    turnBone(B_.pelvis, fwd, -0.55);                              // lean forward over the bars
+    turnBone(B_.spine_01, fwd, -0.25);
+    turnBone(B_.spine_02, fwd, -0.2);
+    turnBone(B_.neck_01, fwd, 0.6);                               // look up the road
+    turnBone(B_.Head, fwd, 0.35);
+    const parent = bike.rider, fit = bike.fit;
+    for (const [s, side] of [[-1, 'l'], [1, 'r']]) {
+      const grip = parent.localToWorld(new THREE.Vector3(s * fit.grip.x, fit.grip.y, fit.grip.z));
+      reach(B_['upperarm_' + side], B_['lowerarm_' + side], B_['hand_' + side], grip, worldAxis(W, s * 0.7, -1, 0.4));
+      const a = bike.crank.rotation.x + (s < 0 ? Math.PI : 0);
+      const pedal = new THREE.Vector3(s * 0.12, fit.bb.y + Math.sin(a) * 0.17 + 0.07, fit.bb.z - Math.cos(a) * 0.17);
+      reach(B_['thigh_' + side], B_['calf_' + side], B_['foot_' + side], parent.localToWorld(pedal), worldAxis(W, s * 0.15, 0.4, -1));
+    }
+  }
+
+  function poseProne() {
+    const p = people.prone, B_ = p.B, body = prone.body;
+    resetPose(p);
+    turnBone(B_.neck_01, worldAxis(body, 1, 0, 0), 0.5);         // lift the head to see ahead
+    turnBone(B_.Head, worldAxis(body, 1, 0, 0), 0.35);
+    const tgt = new THREE.Vector3();
+    prone.arms.forEach((arm, i) => {
+      const s = i ? 1 : -1, side = i ? 'r' : 'l';
+      const rx = arm.rotation.x, rz = arm.rotation.z;
+      const dir = worldAxis(body, s * 0.3 + Math.sin(rz) * s * -0.9, 0.1 + Math.sin(rx) * 0.9, -1).normalize();
+      aim(B_['upperarm_' + side], B_['lowerarm_' + side], B_['upperarm_' + side].getWorldPosition(tgt).addScaledVector(dir, 1));
+      aim(B_['lowerarm_' + side], B_['hand_' + side], B_['lowerarm_' + side].getWorldPosition(tgt).addScaledVector(dir, 1));
+    });
+    prone.legs.forEach((leg, i) => {
+      const s = i ? 1 : -1, side = i ? 'r' : 'l';
+      const rx = leg.rotation.x;
+      const dir = worldAxis(body, s * 0.1, 0.04 + Math.sin(rx) * 0.6, 1).normalize();
+      aim(B_['thigh_' + side], B_['calf_' + side], B_['thigh_' + side].getWorldPosition(tgt).addScaledVector(dir, 1));
+      const shin = worldAxis(body, s * 0.1, 0.04 + Math.sin(rx) * 0.6 + Math.max(0, Math.sin(rx)) * 0.8, 1).normalize();
+      aim(B_['calf_' + side], B_['foot_' + side], B_['calf_' + side].getWorldPosition(tgt).addScaledVector(shin, 1));
+    });
+  }
+
+  function poseBob() {
+    const p = people.bob, B_ = p.B, root = hitter.root;
+    resetPose(p);
+    // the chest turns with the bat, the hands stay on the handle
+    const twist = (hitter.batPivot.rotation.y + Math.PI) * 0.55;
+    turnBone(B_.spine_02, worldAxis(root, 0, 1, 0), twist);
+    turnBone(B_.pelvis, worldAxis(root, 0, 1, 0), twist * 0.3);
+    for (const side of ['l', 'r']) {
+      const k = side === 'l' ? 1 : -1;
+      turnBone(B_['thigh_' + side], worldAxis(root, 1, 0, 0), k * 0.12); // feet apart
+    }
+    hitter.batPivot.updateMatrixWorld(true);
+    const out = worldAxis(root, 0, 0, 1);
+    reach(B_.upperarm_r, B_.lowerarm_r, B_.hand_r, hitter.batPivot.localToWorld(new THREE.Vector3(0.04, 0, 0)), out.clone().negate().add(new THREE.Vector3(0, -1, 0)));
+    reach(B_.upperarm_l, B_.lowerarm_l, B_.hand_l, hitter.batPivot.localToWorld(new THREE.Vector3(0.14, 0, 0)), out.clone().add(new THREE.Vector3(0, -1, 0)));
+  }
+
+  function posePeople() {
+    if (!people.ready) return;
+    if (bike.root.visible && bike.rider.visible) poseSeated();
+    if (prone.root.visible) poseProne();
+    if (!$('pip').classList.contains('hidden') && (phase === 'hitter' || phase === 'launch')) poseBob();
+  }
+  loadModels();
+
+  // ------------------------------------------------------------------
   // The cliff top (static): grass, approach road, rocky face
   // ------------------------------------------------------------------
   function buildCliff() {
@@ -2015,6 +2267,7 @@
     }
     updateParticles(realDt);
     updateTopBar();
+    posePeople();
 
     // main view, then the follow cam inset
     const following = phase === 'rider' || phase === 'launch';
@@ -2037,7 +2290,8 @@
   frame();
 
   // Small hook for automated testing.
-  window.__game = { get phase() { return phase; }, P, H, B, startRun, launch, usePowerup, grantPowerup, keys, togglePip: () => { pipBig = !pipBig; layoutPip(); },
+  window.__game = { get phase() { return phase; }, P, H, B, startRun, launch, usePowerup, grantPowerup, keys,
+    people, bikeObj: bike, hitterObj: hitter, proneObj: prone, scene, renderer, posePeople, togglePip: () => { pipBig = !pipBig; layoutPip(); },
     eggFx: applyEgg, rocks: () => objects.filter((o) => o.type === 'rock'),
     soundsLoaded: () => Object.keys(Sound.buffers), eggPlan: () => eggPlan, objects: () => objects, findEgg,
     rockAhead: (d = 3) => { const r = new THREE.Mesh(G.rock, M.rock); r.scale.setScalar(2); r.position.set(P.x, 0.9, P.z - d); scene.add(r); objects.push({ type: 'rock', x: P.x, z: P.z - d, r: 1.6, top: 2.1, mesh: r, chunk: Math.max(0, Math.floor((d - P.z) / CHUNK)), used: false }); },

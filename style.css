@@ -162,3 +162,7 @@ body.touch .screen { overflow-y: auto; touch-action: pan-y; justify-content: saf
   #resStats { grid-template-columns: repeat(3, 130px); gap: 6px; margin: 6px 0 14px; }
   #resStats div { font-size: 15px; padding: 6px; }
 }
+
+.credits { margin: 16px 0 0; font-size: 11px; opacity: .6; }
+.credits a { color: inherit; }
+@media (max-height: 520px) { .credits { margin-top: 10px; font-size: 9px; } }
