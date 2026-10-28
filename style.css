@@ -132,6 +132,12 @@ body.touch .screen { overflow-y: auto; touch-action: pan-y; justify-content: saf
 @keyframes rot { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
 @media (orientation: portrait) { body.touch #rotate { display: flex; } }
 
+/* Shown if the browser drops the 3D graphics (WebGL context lost); the game stops until reloaded */
+#glLost { display: none; position: fixed; inset: 0; z-index: 101; background: #0a1423; color: #fff;
+  flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: 20px;
+  font-weight: bold; text-align: center; padding: 30px; }
+#glLost.on { display: flex; }
+
 /* Short landscape screens (phones): shrink the HUD and menus */
 @media (max-height: 520px) {
   #topbar { top: 4px; gap: 6px; }

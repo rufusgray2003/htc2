@@ -83,6 +83,15 @@
   renderer.shadowMap.autoUpdate = false; // updated once per frame, not per camera
   $('game').appendChild(renderer.domElement);
 
+  // Phones can drop the 3D graphics (e.g. after switching apps or running low on memory), leaving
+  // a white canvas. three.js can't reliably rebuild everything, so stop and offer a reload instead.
+  let glLost = false;
+  renderer.domElement.addEventListener('webglcontextlost', () => {
+    glLost = true;
+    $('glLost').classList.add('on');
+  });
+  $('glReload').addEventListener('click', () => location.reload());
+
   const scene = new THREE.Scene();
   const SKY = 0xa8d8ff;
   scene.background = new THREE.Color(SKY);
@@ -2169,7 +2178,7 @@
   // Touch: hold the left or right half of the screen to steer, tap anywhere to swing,
   // tap a powerup slot to use it, tap the follow cam to resize it.
   let touchL = false, touchR = false;
-  const onUi = (el) => el && el.closest && el.closest('button, .screen, #rotate');
+  const onUi = (el) => el && el.closest && el.closest('button, .screen, #rotate, #glLost');
   function readTouches(e) {
     let l = false, r = false;
     for (const t of e.touches) {
@@ -2220,6 +2229,7 @@
   const clock = new THREE.Clock();
   let titleT = 0;
   function frame() {
+    if (glLost) return; // stopped for good; the reload overlay is showing
     // Paused while a phone is held upright (the "turn sideways" screen is showing).
     if (isPortrait()) { clock.getDelta(); requestAnimationFrame(frame); return; }
     const realDt = Math.min(clock.getDelta(), 1 / 30);

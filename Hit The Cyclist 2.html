@@ -142,6 +142,12 @@ body.touch .screen { overflow-y: auto; touch-action: pan-y; justify-content: saf
 @keyframes rot { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
 @media (orientation: portrait) { body.touch #rotate { display: flex; } }
 
+/* Shown if the browser drops the 3D graphics (WebGL context lost); the game stops until reloaded */
+#glLost { display: none; position: fixed; inset: 0; z-index: 101; background: #0a1423; color: #fff;
+  flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: 20px;
+  font-weight: bold; text-align: center; padding: 30px; }
+#glLost.on { display: flex; }
+
 /* Short landscape screens (phones): shrink the HUD and menus */
 @media (max-height: 520px) {
   #topbar { top: 4px; gap: 6px; }
@@ -216,6 +222,7 @@ body.touch .screen { overflow-y: auto; touch-action: pan-y; justify-content: saf
 <div id="pip" class="hidden"><span id="pipLabel">Follow cam · click to enlarge</span></div>
 <div id="flash"></div>
 <div id="rotate"><div class="rotIcon">📱</div><div>Turn your phone sideways to play</div></div>
+<div id="glLost"><div>The graphics were reset by your browser</div><button id="glReload">Tap to reload</button></div>
 
 <!-- Title screen -->
 <div id="title" class="screen">
@@ -4678,6 +4685,15 @@ window.HTC_MODELS = {
   renderer.shadowMap.autoUpdate = false; // updated once per frame, not per camera
   $('game').appendChild(renderer.domElement);
 
+  // Phones can drop the 3D graphics (e.g. after switching apps or running low on memory), leaving
+  // a white canvas. three.js can't reliably rebuild everything, so stop and offer a reload instead.
+  let glLost = false;
+  renderer.domElement.addEventListener('webglcontextlost', () => {
+    glLost = true;
+    $('glLost').classList.add('on');
+  });
+  $('glReload').addEventListener('click', () => location.reload());
+
   const scene = new THREE.Scene();
   const SKY = 0xa8d8ff;
   scene.background = new THREE.Color(SKY);
@@ -6764,7 +6780,7 @@ window.HTC_MODELS = {
   // Touch: hold the left or right half of the screen to steer, tap anywhere to swing,
   // tap a powerup slot to use it, tap the follow cam to resize it.
   let touchL = false, touchR = false;
-  const onUi = (el) => el && el.closest && el.closest('button, .screen, #rotate');
+  const onUi = (el) => el && el.closest && el.closest('button, .screen, #rotate, #glLost');
   function readTouches(e) {
     let l = false, r = false;
     for (const t of e.touches) {
@@ -6815,6 +6831,7 @@ window.HTC_MODELS = {
   const clock = new THREE.Clock();
   let titleT = 0;
   function frame() {
+    if (glLost) return; // stopped for good; the reload overlay is showing
     // Paused while a phone is held upright (the "turn sideways" screen is showing).
     if (isPortrait()) { clock.getDelta(); requestAnimationFrame(frame); return; }
     const realDt = Math.min(clock.getDelta(), 1 / 30);
