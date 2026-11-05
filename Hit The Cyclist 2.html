@@ -11,6 +11,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   font-family: "Trebuchet MS", "Segoe UI", sans-serif; color: #fff; user-select: none; }
+/* pinned like the overlays, so the 3D view and the HUD/follow-cam frame can't drift apart when a phone scrolls the page */
+#game { position: fixed; inset: 0; overflow: hidden; }
 #game canvas { display: block; }
 .hidden { display: none !important; }
 
@@ -222,7 +224,7 @@ body.touch .screen { overflow-y: auto; touch-action: pan-y; justify-content: saf
 <div id="pip" class="hidden"><span id="pipLabel">Follow cam · click to enlarge</span></div>
 <div id="flash"></div>
 <div id="rotate"><div class="rotIcon">📱</div><div>Turn your phone sideways to play</div></div>
-<div id="glLost"><div>The graphics were reset by your browser</div><button id="glReload">Tap to reload</button></div>
+<div id="glLost"><div id="glLostMsg">The graphics were reset by your browser</div><button id="glReload">Tap to reload</button></div>
 
 <!-- Title screen -->
 <div id="title" class="screen">
@@ -4677,7 +4679,18 @@ window.HTC_MODELS = {
   if (TOUCH) document.body.classList.add('touch');
   const isPortrait = () => TOUCH && innerHeight > innerWidth;
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // Some phones refuse a smoothed (antialiased) 3D view, or any 3D view at all. Try the nicer one first,
+  // then plainer ones, and explain if none works rather than leaving a blank page.
+  let renderer = null;
+  for (const opts of [{ antialias: true }, { antialias: false }, { antialias: false, powerPreference: 'low-power' }]) {
+    try { renderer = new THREE.WebGLRenderer(opts); break; } catch (e) { console.warn('WebGL setup failed', opts, e); }
+  }
+  if (!renderer) {
+    $('glLostMsg').textContent = "This browser can't show 3D graphics. Try updating it, or use Chrome or Safari.";
+    $('glLost').classList.add('on');
+    $('glReload').addEventListener('click', () => location.reload());
+    throw new Error('WebGL unavailable');
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, TOUCH ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
@@ -4753,12 +4766,21 @@ window.HTC_MODELS = {
     sun.target.position.set(x, y, z - 20);
   }
 
-  addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight;
+  // Keep the 3D view the size of the window. Phones often fire 'resize' before the new size is known (or not at
+  // all) when rotating, going fullscreen or hiding the address bar, which left the picture stretched and out of
+  // line with the HUD and the follow-cam frame. So check every frame as well.
+  const sizeNow = { w: 0, h: 0, dpr: 0 };
+  function syncSize() {
+    const w = innerWidth, h = innerHeight, dpr = Math.min(window.devicePixelRatio || 1, TOUCH ? 1.5 : 2);
+    if (w === sizeNow.w && h === sizeNow.h && dpr === sizeNow.dpr) return;
+    Object.assign(sizeNow, { w, h, dpr });
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(w, h);
     layoutPip();
-  });
+  }
+  addEventListener('resize', syncSize);
 
   // ------------------------------------------------------------------
   // Textures (procedural)
@@ -4831,6 +4853,10 @@ window.HTC_MODELS = {
   // Shared geometry / materials
   // ------------------------------------------------------------------
   const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+  // For flat things lying on the ground (track, grass patches, mud...). They sit only millimetres above what's
+  // under them, and phones with a less precise depth buffer let the lower one flicker through. This makes the
+  // upper layer win the depth test; a higher level sits on top of a lower one.
+  const onGround = (mat, level = 1) => Object.assign(mat, { polygonOffset: true, polygonOffsetFactor: -level, polygonOffsetUnits: -2 * level });
   const M = {
     dirt: lam(0xffffff, { map: dirtTex }),
     trunk: lam(0x7a5230),
@@ -4844,7 +4870,7 @@ window.HTC_MODELS = {
     rock: lam(0x8a8a90, { flatShading: true }),
     cliff: lam(0x9a8470, { flatShading: true }),
     mud: lam(0x4a3220),
-    boost: lam(0xffffff, { map: boostTex }),
+    boost: onGround(lam(0xffffff, { map: boostTex })),
     qbox: lam(0xffffff, { map: qTex }),
     cloud: new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xb8b8b8, fog: false }),
     lowCloud: new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xa0a0a0, transparent: true, opacity: 0.82, depthWrite: false, fog: false }),
@@ -5203,7 +5229,7 @@ window.HTC_MODELS = {
     mat.onBeforeCompile = function (shader) {
       THREE.Material.prototype.onBeforeCompile.call(this, shader); // the shared haze uniforms
       Object.assign(shader.uniforms, U);
-      shader.vertexShader = 'varying vec3 vBind;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvBind = position;');
+      shader.vertexShader = 'attribute vec3 bindPos;\nvarying vec3 vBind;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvBind = bindPos;');
       shader.fragmentShader = 'varying vec3 vBind;\nuniform vec3 cShirt, cStripe, cPants, cShoes;\nuniform float sleeveX, stripes;\n' +
         shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
         {
@@ -5225,22 +5251,77 @@ window.HTC_MODELS = {
     return new Promise((res, rej) => loader.parse(bin.buffer, '', res, rej));
   }
 
+  // Skinning (bending the body mesh to follow the bones) is done here on the CPU rather than by three.js on
+  // the GPU. GPU skinning needs WebGL 2 or float textures, which some phones lack: there the body simply
+  // vanished, leaving a floating helmet and hair. It's cheap: a few thousand points per person per frame.
+  function cpuSkin(sm) {
+    const geo = sm.geometry.clone();
+    const pos = geo.attributes.position, nrm = geo.attributes.normal;
+    const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight, n4 = pos.count * 4;
+    const src = { pos: pos.array.slice(), nrm: nrm.array.slice(), idx: new Uint16Array(n4), wt: new Float32Array(n4) };
+    for (let v = 0; v < pos.count; v++) {
+      src.idx.set([si.getX(v), si.getY(v), si.getZ(v), si.getW(v)], v * 4);
+      src.wt.set([sw.getX(v), sw.getY(v), sw.getZ(v), sw.getW(v)], v * 4);
+    }
+    geo.setAttribute('bindPos', new THREE.BufferAttribute(src.pos, 3)); // rest pose, for painting the clothes
+    geo.deleteAttribute('skinIndex'); geo.deleteAttribute('skinWeight');
+    pos.setUsage(THREE.DynamicDrawUsage); nrm.setUsage(THREE.DynamicDrawUsage);
+    const mesh = new THREE.Mesh(geo, sm.material);
+    mesh.name = sm.name; mesh.position.copy(sm.position); mesh.quaternion.copy(sm.quaternion); mesh.scale.copy(sm.scale);
+    sm.parent.add(mesh); sm.parent.remove(sm);
+    const sk = sm.skeleton, nb = sk.bones.length, mats = new Float32Array(nb * 16), m = new THREE.Matrix4(), inv = new THREE.Matrix4();
+    mesh.userData.skin = () => {
+      inv.copy(mesh.matrixWorld).invert();
+      for (let b = 0; b < nb; b++) {
+        m.multiplyMatrices(sk.bones[b].matrixWorld, sk.boneInverses[b]).multiply(sm.bindMatrix).premultiply(inv);
+        mats.set(m.elements, b * 16);
+      }
+      const P = pos.array, N = nrm.array, SP = src.pos, SN = src.nrm, I = src.idx, W = src.wt;
+      for (let v = 0, n = pos.count; v < n; v++) {
+        const o = v * 3, px = SP[o], py = SP[o + 1], pz = SP[o + 2], nx = SN[o], ny = SN[o + 1], nz = SN[o + 2];
+        let X = 0, Y = 0, Z = 0, NX = 0, NY = 0, NZ = 0;
+        for (let k = 0; k < 4; k++) {
+          const w = W[v * 4 + k]; if (w === 0) continue;
+          const e = I[v * 4 + k] * 16;
+          X += w * (mats[e] * px + mats[e + 4] * py + mats[e + 8] * pz + mats[e + 12]);
+          Y += w * (mats[e + 1] * px + mats[e + 5] * py + mats[e + 9] * pz + mats[e + 13]);
+          Z += w * (mats[e + 2] * px + mats[e + 6] * py + mats[e + 10] * pz + mats[e + 14]);
+          NX += w * (mats[e] * nx + mats[e + 4] * ny + mats[e + 8] * nz);
+          NY += w * (mats[e + 1] * nx + mats[e + 5] * ny + mats[e + 9] * nz);
+          NZ += w * (mats[e + 2] * nx + mats[e + 6] * ny + mats[e + 10] * nz);
+        }
+        const l = Math.hypot(NX, NY, NZ) || 1;
+        P[o] = X; P[o + 1] = Y; P[o + 2] = Z; N[o] = NX / l; N[o + 1] = NY / l; N[o + 2] = NZ / l;
+      }
+      pos.needsUpdate = true; nrm.needsUpdate = true;
+    };
+    return mesh;
+  }
+
+  const personTex = {}; // the three people share one set of textures (less memory on phones)
   function makePerson(gltf, look) {
     const model = gltf.scene;
     const wrap = new THREE.Group();          // faces -Z like everything else in the game
     const turn = new THREE.Group(); turn.rotation.y = Math.PI;
     wrap.add(turn); turn.add(model);
-    const B = {}, bones = [];
+    const B = {}, bones = [], meshes = [];
     model.traverse((n) => {
       if (n.isBone) { B[n.name] = n; bones.push(n); }
-      if (n.isMesh) {
-        const old = n.material;
-        if (old.map) old.map.encoding = THREE.LinearEncoding; // the game renders without sRGB conversion
-        n.material = new THREE.MeshLambertMaterial({ map: old.map, color: old.name === 'Hair' ? look.hairTint : 0xffffff });
-        if (old.name === 'Body') dressMaterial(n.material, look);
-        n.castShadow = true; n.frustumCulled = false;
-      }
+      if (n.isMesh) meshes.push(n);
     });
+    model.updateMatrixWorld(true);
+    const skinned = [];
+    for (let n of meshes) {
+      const old = n.material;
+      if (old.map) {
+        old.map.encoding = THREE.LinearEncoding; // the game renders without sRGB conversion
+        personTex[old.name] = personTex[old.name] || old.map;
+      }
+      n.material = new THREE.MeshLambertMaterial({ map: personTex[old.name] || null, color: old.name === 'Hair' ? look.hairTint : 0xffffff });
+      if (old.name === 'Body') dressMaterial(n.material, look);
+      if (n.isSkinnedMesh) { n = cpuSkin(n); skinned.push(n); }
+      n.castShadow = true; n.frustumCulled = false;
+    }
     // Hair: keep one style and pin it (and the helmet) to the head bone.
     model.updateMatrixWorld(true);
     const toHead = B.Head.matrixWorld.clone().invert();
@@ -5258,7 +5339,9 @@ window.HTC_MODELS = {
       helm.applyMatrix4(toHead); B.Head.add(helm);
     }
     for (const b of bones) b.userData.rest = b.quaternion.clone();
-    return { wrap, model, B, bones };
+    const skin = () => { wrap.updateWorldMatrix(true, true); for (const s of skinned) s.userData.skin(); };
+    skin();
+    return { wrap, model, B, bones, skin };
   }
 
   function resetPose(p) {
@@ -5427,9 +5510,9 @@ window.HTC_MODELS = {
 
   function posePeople() {
     if (!people.ready) return;
-    if (bike.root.visible && bike.rider.visible) poseSeated();
-    if (prone.root.visible) poseProne();
-    if (!$('pip').classList.contains('hidden') && (phase === 'hitter' || phase === 'launch')) poseBob();
+    if (bike.root.visible && bike.rider.visible) { poseSeated(); people.seated.skin(); }
+    if (prone.root.visible) { poseProne(); people.prone.skin(); }
+    if (!$('pip').classList.contains('hidden') && (phase === 'hitter' || phase === 'launch')) { poseBob(); people.bob.skin(); }
   }
   loadModels();
 
@@ -5441,7 +5524,7 @@ window.HTC_MODELS = {
     const box = new THREE.Mesh(new THREE.BoxGeometry(320, CLIFF_H, 220), [M.cliff, M.cliff, top, M.cliff, M.cliff, M.cliff]);
     box.position.set(0, CLIFF_H / 2, 110); box.receiveShadow = true;
     scene.add(box);
-    const track = new THREE.Mesh(new THREE.PlaneGeometry(4, 220), lam(0xb08a62, { map: withRepeat(dirtTex, 0.4, 21) }));
+    const track = new THREE.Mesh(new THREE.PlaneGeometry(4, 220), onGround(lam(0xb08a62, { map: withRepeat(dirtTex, 0.4, 21) }), 1));
     track.rotation.x = -Math.PI / 2; track.position.set(0, CLIFF_H + 0.02, 110); track.receiveShadow = true;
     scene.add(track);
     // two grass patches across the track: the cyclist rides through both. Hitting is possible from the
@@ -5449,7 +5532,7 @@ window.HTC_MODELS = {
     const patchLen = HIT_WINDOW - PATCH_GAP;
     for (const side of [1, -1]) {
       const zc = SWEET_Z + side * (PATCH_GAP + patchLen / 2);
-      const patch = new THREE.Mesh(new THREE.PlaneGeometry(6, patchLen), lam(0xffffff, { map: withRepeat(grassTex, 1.5, 0.4) }));
+      const patch = new THREE.Mesh(new THREE.PlaneGeometry(6, patchLen), onGround(lam(0xffffff, { map: withRepeat(grassTex, 1.5, 0.4) }), 2));
       patch.rotation.x = -Math.PI / 2; patch.position.set(0, CLIFF_H + 0.03, zc); patch.receiveShadow = true;
       scene.add(patch);
       for (let k = 0; k < 16; k++) {
@@ -5544,7 +5627,7 @@ window.HTC_MODELS = {
     { name: 'Sludge', color: 0x2e2a26, fleck: 0x45403a, slow: 11 },
   ];
   const mudMats = new Map();
-  const mudMat = (c) => { if (!mudMats.has(c)) mudMats.set(c, lam(c)); return mudMats.get(c); };
+  const mudMat = (c, level) => { const k = c + '/' + level; if (!mudMats.has(k)) mudMats.set(k, onGround(lam(c), level)); return mudMats.get(k); };
   const MUD_N = 32;
   function blob(R) {
     const harm = [2, 3, 5].map((k, j) => ({ k, a: rand(0.05, [0.22, 0.14, 0.08][j]), p: rand(0, 6.28) }));
@@ -5561,12 +5644,12 @@ window.HTC_MODELS = {
   function makeMud(x, z, R, type = MUD_TYPES[(Math.random() * MUD_TYPES.length) | 0]) {
     const { geo, radii } = blob(R);
     const sx = rand(0.7, 1.35), sz = rand(0.8, 1.8);
-    const m = new THREE.Mesh(geo, mudMat(type.color));
+    const m = new THREE.Mesh(geo, mudMat(type.color, 1));
     m.rotation.x = -Math.PI / 2; m.scale.set(sx, sz, 1); m.position.set(x, 0.02 + rand(0, 0.008), z);
     m.receiveShadow = true; m.userData.ownGeo = true;
     for (let k = 0; k < 2 + ((Math.random() * 3) | 0); k++) {
       const f = blob(R * rand(0.12, 0.3));
-      const fl = new THREE.Mesh(f.geo, mudMat(type.fleck));
+      const fl = new THREE.Mesh(f.geo, mudMat(type.fleck, 2));
       const a = rand(0, 6.28), d = rand(0, R * 0.55);
       fl.position.set(Math.cos(a) * d, Math.sin(a) * d, 0.004); fl.userData.ownGeo = true;
       m.add(fl);
@@ -5823,7 +5906,7 @@ window.HTC_MODELS = {
         g.add(rod(V(s * 0.55, 2.1, 0), V(s * 1.3, 2.6, 0), 0.04, M.trunk));
       }
       const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.5, 12), lam(0x111111)); hat.position.y = 3.55; g.add(hat);
-      const puddle = new THREE.Mesh(new THREE.CircleGeometry(1.6, 20), lam(0x90caf9)); puddle.rotation.x = -Math.PI / 2; puddle.position.y = 0.02; g.add(puddle);
+      const puddle = new THREE.Mesh(new THREE.CircleGeometry(1.6, 20), onGround(lam(0x90caf9))); puddle.rotation.x = -Math.PI / 2; puddle.position.y = 0.02; g.add(puddle);
       faceRider(g, x);
       return { mesh: g, hitR: 1.7, hitH: 4 };
     },
@@ -5850,7 +5933,7 @@ window.HTC_MODELS = {
       const tv = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.85, 0.35), lam(0x222222)); tv.position.set(0, 0.95, 2.6); g.add(tv);
       const screenMat = new THREE.MeshBasicMaterial({ color: 0x4fc3f7 });
       const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.65), screenMat); screen.position.set(0, 0.95, 2.42); screen.rotation.y = Math.PI; g.add(screen);
-      const rug = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.2), lam(0x7b1fa2)); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.02, 1.3); g.add(rug);
+      const rug = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.2), onGround(lam(0x7b1fa2))); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.02, 1.3); g.add(rug);
       g.rotation.y = x > 0 ? -Math.PI / 2 + 0.4 : Math.PI / 2 - 0.4;
       g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       return { mesh: g, hitR: 2.6, hitH: 1.6, update: (t) => screenMat.color.setHSL((Math.floor(t * 3) * 0.37) % 1, 0.7, 0.55) };
@@ -5867,7 +5950,7 @@ window.HTC_MODELS = {
     picnic(x) {
       const g = new THREE.Group();
       const checks = canvasTex(64, 64, (c) => { for (let a = 0; a < 8; a++) for (let b = 0; b < 8; b++) { c.fillStyle = (a + b) % 2 ? '#e53935' : '#fff'; c.fillRect(a * 8, b * 8, 8, 8); } });
-      const blanket = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), lam(0xffffff, { map: checks })); blanket.rotation.x = -Math.PI / 2; blanket.position.y = 0.03; g.add(blanket);
+      const blanket = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), onGround(lam(0xffffff, { map: checks }))); blanket.rotation.x = -Math.PI / 2; blanket.position.y = 0.03; g.add(blanket);
       for (let k = 0; k < 3; k++) {
         const m = new THREE.Group(), fur = lam(0x4a3f45);
         const b = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), fur); b.scale.set(1, 1.1, 1); b.position.y = 0.2; m.add(b);
@@ -6832,6 +6915,7 @@ window.HTC_MODELS = {
   let titleT = 0;
   function frame() {
     if (glLost) return; // stopped for good; the reload overlay is showing
+    syncSize();
     // Paused while a phone is held upright (the "turn sideways" screen is showing).
     if (isPortrait()) { clock.getDelta(); requestAnimationFrame(frame); return; }
     const realDt = Math.min(clock.getDelta(), 1 / 30);

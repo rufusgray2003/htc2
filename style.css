@@ -1,6 +1,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   font-family: "Trebuchet MS", "Segoe UI", sans-serif; color: #fff; user-select: none; }
+/* pinned like the overlays, so the 3D view and the HUD/follow-cam frame can't drift apart when a phone scrolls the page */
+#game { position: fixed; inset: 0; overflow: hidden; }
 #game canvas { display: block; }
 .hidden { display: none !important; }
 
