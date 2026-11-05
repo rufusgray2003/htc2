@@ -94,6 +94,21 @@
   renderer.shadowMap.autoUpdate = false; // updated once per frame, not per camera
   $('game').appendChild(renderer.domElement);
 
+  // Add ?gpu to the URL to show what the device's graphics can do (for chasing device-specific glitches).
+  if (/[?&]gpu\b/.test(location.search)) {
+    const gl = renderer.getContext(), dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    const prec = (t) => { const f = gl.getShaderPrecisionFormat(t, gl.HIGH_FLOAT); return f && f.precision > 0 ? 'highp' : 'mediump only'; };
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;top:4px;left:4px;z-index:200;background:rgba(0,0,0,.75);color:#fff;font:12px monospace;padding:6px;white-space:pre;pointer-events:none';
+    box.textContent = [
+      'GPU: ' + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)),
+      'WebGL ' + (renderer.capabilities.isWebGL2 ? 2 : 1) + ', shaders: ' + renderer.capabilities.precision,
+      'depth bits: ' + gl.getParameter(gl.DEPTH_BITS) + ', vertex: ' + prec(gl.VERTEX_SHADER) + ', fragment: ' + prec(gl.FRAGMENT_SHADER),
+      'screen: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio,
+    ].join('\n');
+    document.body.appendChild(box);
+  }
+
   // Phones can drop the 3D graphics (e.g. after switching apps or running low on memory), leaving
   // a white canvas. three.js can't reliably rebuild everything, so stop and offer a reload instead.
   let glLost = false;
@@ -105,7 +120,8 @@
 
   const scene = new THREE.Scene();
   const SKY = 0xa8d8ff;
-  scene.background = new THREE.Color(SKY);
+  const skyColor = new THREE.Color(SKY);
+  scene.background = skyColor;
   scene.fog = new THREE.Fog(SKY, FOG_NEAR, FOG_FAR);
 
   // Height haze: replace three.js's fog (a flat wall at a set depth) with one that also fades out anything
@@ -150,9 +166,12 @@
   chaseCam.layers.enable(LAYER_HITTER);
   chaseCam.position.set(0, CLIFF_H + 5, 100);
 
-  scene.add(new THREE.HemisphereLight(0xe6f4ff, 0x8a6a48, 0.8));
+  const hemi = new THREE.HemisphereLight(0xe6f4ff, 0x8a6a48, 0.8);
+  hemi.layers.enableAll(); // lights must share a layer with the camera, including the bat/arms pass
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1d0, 0.9);
   sun.castShadow = true;
+  sun.layers.enableAll();
   sun.shadow.mapSize.set(TOUCH ? 1024 : 2048, TOUCH ? 1024 : 2048);
   Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 260 });
   sun.shadow.bias = -0.0006;
@@ -249,10 +268,12 @@
   // Shared geometry / materials
   // ------------------------------------------------------------------
   const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
-  // For flat things lying on the ground (track, grass patches, mud...). They sit only millimetres above what's
-  // under them, and phones with a less precise depth buffer let the lower one flicker through. This makes the
-  // upper layer win the depth test; a higher level sits on top of a lower one.
-  const onGround = (mat, level = 1) => Object.assign(mat, { polygonOffset: true, polygonOffsetFactor: -level, polygonOffsetUnits: -2 * level });
+  // For flat things lying on the ground (track, grass patches, mud...). They sit only centimetres above what's
+  // under them, and phones with a less precise depth buffer let the lower one flicker through. This gives the
+  // upper layer a small, fixed head start in the depth test; a higher level sits on top of a lower one.
+  // (No angle-scaled offset: at the low angles you see the ground from, some phones scaled that up so far that
+  // mud drew over molehills and rocks.)
+  const onGround = (mat, level = 1) => Object.assign(mat, { polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -4 * level });
   const M = {
     dirt: lam(0xffffff, { map: dirtTex }),
     trunk: lam(0x7a5230),
@@ -288,7 +309,7 @@
     boost: new THREE.PlaneGeometry(2.6, 4),
     qbox: new THREE.BoxGeometry(1.4, 1.4, 1.4),
     cloud: new THREE.SphereGeometry(1, 8, 6),
-    hill: new THREE.SphereGeometry(1, 10, 6),
+    hill: new THREE.SphereGeometry(1, 10, 3, 0, Math.PI * 2, 0, Math.PI / 2), // a dome: no buried half to show through
     ground: new THREE.PlaneGeometry(320, CHUNK),
   };
 
@@ -1047,7 +1068,7 @@
       const f = blob(R * rand(0.12, 0.3));
       const fl = new THREE.Mesh(f.geo, mudMat(type.fleck, 2));
       const a = rand(0, 6.28), d = rand(0, R * 0.55);
-      fl.position.set(Math.cos(a) * d, Math.sin(a) * d, 0.004); fl.userData.ownGeo = true;
+      fl.position.set(Math.cos(a) * d, Math.sin(a) * d, 0.012); fl.userData.ownGeo = true;
       m.add(fl);
     }
     return { type: 'mud', x, z, mesh: m, radii, sx, sz, slow: type.slow, name: type.name, reach: R * Math.max(sx, sz) * 1.3 + 1 };
@@ -1085,7 +1106,7 @@
       if (Math.random() < 0.7) {
         const h = new THREE.Mesh(G.hill, M.hill);
         h.scale.set(rand(40, 80), rand(12, 30), rand(30, 50));
-        h.position.set(s * rand(160, 230), -2, zr()); group.add(h);
+        h.position.set(s * rand(160, 230), -0.5, zr()); group.add(h);
       }
     }
     if (Math.random() < 0.8) {
@@ -2368,7 +2389,21 @@
     renderer.shadowMap.needsUpdate = true;
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, innerWidth, innerHeight);
+    // The world first, with the near limit as far out as the camera's height allows. Depth precision depends
+    // mostly on that limit, and some phones have little to spare: with it too close, distant things drew on top
+    // of nearer ones. Then the bat, arms and wings, drawn over everything with their own close near limit.
+    camera.near = clamp((camera.position.y - groundAt(camera.position.z)) * 0.4, 0.05, 0.4);
+    const camMask = camera.layers.mask;
+    camera.layers.disable(LAYER_FP);
+    camera.updateProjectionMatrix();
     renderer.render(scene, camera);
+    camera.layers.set(LAYER_FP);
+    camera.near = 0.02; camera.updateProjectionMatrix();
+    renderer.autoClear = false; scene.background = null; // (a sky colour would wipe the world drawn above)
+    renderer.clearDepth();
+    renderer.render(scene, camera);
+    renderer.autoClear = true; scene.background = skyColor;
+    camera.layers.mask = camMask;
     if (!$('pip').classList.contains('hidden')) {
       const r = pipRect();
       renderer.setScissorTest(true);
